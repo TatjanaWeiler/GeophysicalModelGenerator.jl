@@ -1,5 +1,6 @@
 /test/*.vts
 /test/*.vtu
+/.vscode
 .DS_Store
 Manifest.toml
 /docs/build
@@ -20,6 +21,9 @@ tutorial/test.tiff
 *.vtr
 *.vts
 *.jld2
+*.swm
+*.swn
+*.swo
 *.tiff
 *.nc
 !/test/test_files/ISCTest.xml

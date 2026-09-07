@@ -6,12 +6,12 @@ using Base: String, show_index, Tuple, FieldDescStorage
 import GeoParams
 using .GeoParams
 export
-        @u_str, uconvert, upreffered, unit, ustrip, NoUnits,  #  Units
-        GeoUnit, GEO_units, SI_units, NO_units, AbstractGeoUnits,
-        Nondimensionalize, Nondimensionalize!, Dimensionalize, Dimensionalize!,
-        superscript, upreferred, GEO, SI, NONE, isDimensional,
-        km, m, cm, mm, Myrs, yr, s, MPa, Pa, Pas, K, C, kg, mol,
-        isDimensional, Value, NumValue, Unit, UnitValue
+    @u_str, uconvert, upreffered, unit, ustrip, NoUnits, #  Units
+    GeoUnit, GEO_units, SI_units, NO_units, AbstractGeoUnits,
+    Nondimensionalize, Nondimensionalize!, Dimensionalize, Dimensionalize!,
+    superscript, upreferred, GEO, SI, NONE, isDimensional,
+    km, m, cm, mm, Myrs, yr, s, MPa, Pa, Pas, K, C, kg, mol,
+    isDimensional, Value, NumValue, Unit, UnitValue
 
 export ReadCSV_LatLon, meshgrid, voxel_grav
 
@@ -23,7 +23,7 @@ export AbstractGeneralGrid
 using DelimitedFiles, Statistics
 
 # other packages
-using   WriteVTK, Colors, MeshIO, FileIO, Interpolations, Geodesy
+using WriteVTK, Colors, MeshIO, FileIO, Interpolations, Geodesy
 
 export vtk_multiblock, vtk_save         # Simplifies writing multiblock files
 export LLA
@@ -43,7 +43,6 @@ include("Setup_geometry.jl")
 include("stl.jl")
 include("ProfileProcessing.jl")
 include("IO.jl")
-include("IO_ASAGI.jl")
 include("event_counts.jl")
 include("surface_functions.jl")
 include("movies_from_pics.jl")
@@ -53,6 +52,30 @@ include("WaterFlow.jl")
 # Add optional routines (only activated when the packages are loaded)
 
 # GMT routines
+
+"""
+    write_ASAGI(fname::String, Data::CartData; fields=nothing, km_to_m=false)
+
+Writes a CartData structure to an ASAGI NetCDF file. Requires loading `NCDatasets`.
+"""
+function write_ASAGI end
+export write_ASAGI
+
+"""
+    read_ASAGI(fname::String)
+
+Reads an ASAGI NetCDF file and returns a CartData structure. Requires loading `NCDatasets`.
+"""
+function read_ASAGI end
+export read_ASAGI
+
+"""
+    tomo_2_GeoData(filename::String; vel_type="vs")
+
+Reads a seismic tomography NetCDF file and returns a GeoData structure. Requires loading `NCDatasets`.
+"""
+function tomo_2_GeoData end
+export tomo_2_GeoData
 
 """
         import_topo

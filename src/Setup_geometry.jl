@@ -770,10 +770,12 @@ julia> write_paraview(Model3D,"LaMEM_ModelSetup")           # Save model to para
 ```
 
 """
-function add_polygon!(Phase, Temp, Grid::AbstractGeneralGrid;   # required input
-    xlim=(), ylim::NTuple{2, _T} = (0,0.8), zlim=(),           # limits of the box
-    phase = ConstantPhase(1),                                   # Sets the phase number(s) in the box
-    T=nothing, cell=false )  where _T                           # Sets the thermal structure (various functions are available)
+function add_polygon!(
+        Phase, Temp, Grid::AbstractGeneralGrid;   # required input
+        xlim = (), ylim::Tuple = (0.0, 0.8), zlim = (),           # limits of the box
+        phase = ConstantPhase(1),                                   # Sets the phase number(s) in the box
+        T = nothing, cell = false
+    )                             # Sets the thermal structure (various functions are available)
 
 
     xlim_ = Float64.(collect(xlim))
@@ -782,33 +784,185 @@ function add_polygon!(Phase, Temp, Grid::AbstractGeneralGrid;   # required input
 
 
     # Retrieve 3D data arrays for the grid
-    X,Y,Z = coordinate_grids(Grid, cell=cell)
+    X, Y, Z = coordinate_grids(Grid, cell = cell)
 
-    ind = zeros(Bool,size(X))
-    ind_slice = zeros(Bool,size(X[:,1,:]))
+    ind = zeros(Bool, size(X))
+    ind_slice = zeros(Bool, size(X[:, 1, :]))
 
     # find points within the polygon, only in 2D
-    for i = 1:size(Y)[2]
-        if Y[1,i,1] >= ylim_[1] && Y[1,i,1]<=ylim_[2] 
-            inpolygon!(ind_slice, xlim_,zlim_, X[:,i,:], Z[:,i,:])
-            ind[:,i,:] = ind_slice
+    for i in 1:size(Y)[2]
+        if Y[1, i, 1] >= ylim_[1] && Y[1, i, 1] <= ylim_[2]
+            inpolygon!(ind_slice, xlim_, zlim_, X[:, i, :], Z[:, i, :])
+            ind[:, i, :] = ind_slice
         else
-            ind[:,i,:] = zeros(size(X[:,1,:]))
+            ind[:, i, :] = zeros(size(X[:, 1, :]))
         end
     end
 
-    Zrel = Z .- maximum(zlim);
 
-    println("add poly")
-    # Compute thermal structure accordingly. See routines below for different options
-    if T != nothing
-    Temp[ind] = compute_thermal_structure(Temp[ind], X[ind], Y[ind], Zrel[ind], Phase[ind], T) 
+# Compute thermal structure accordingly. See routines below for different options
+if T != nothing
+   Temp[ind] = compute_thermal_structure(Temp[ind], X[ind], Y[ind], Z[ind], Phase[ind], T)
+end
+
+# Set the phase. Different routines are available for that - see below.
+Phase[ind] = compute_phase(Phase[ind], Temp[ind], X[ind], Y[ind], Z[ind], phase)
+
+    return nothing
+end
+
+"""
+    add_polygon!(Phase, Temp, Grid::AbstractGeneralGrid,
+    bounds::AbstractVector{<:AbstractVector{<:Real}};
+    phase = ConstantPhase(1),
+    T = nothing,
+    cell = false     )
+Add polygon function but getting bounds as a vector bounds in a way of [[xmin,xmax],[ymin,ymax],[zmin,zmax]]. If bounds is empty return nothing 
+"""
+function add_polygon!(
+        Phase, Temp, Grid::AbstractGeneralGrid,           # required input
+        bounds::Union{Vector{Any}, AbstractVector{<:AbstractVector{<:Real}}};    # limits of the box
+        phase = ConstantPhase(1),                            # Sets the phase number(s) in the box
+        T = nothing,                                         # Sets the thermal structure (various functions are available)
+        cell = false                                         # if true, Phase and Temp are defined on cell centers
+    )
+
+    return if !isempty(bounds)
+        xlim = (Tuple(bounds[1]))
+        ylim = (Tuple(bounds[2]))
+        zlim = (Tuple(bounds[3]))
+
+        add_polygon!(
+            Phase, Temp, Grid;       # required input
+            xlim = xlim, ylim = ylim, zlim = zlim,     # limits of the box
+            phase = phase,                              # Sets the phase number(s) in the box
+            T = T,                                  # Sets the thermal structure (various functions are available)
+            cell = cell
+        )
     end
 
-    # Set the phase. Different routines are available for that - see below.
-    Phase[ind] = compute_phase(Phase[ind], Temp[ind], X[ind], Y[ind], Z[ind], phase)
+end
 
-return nothing
+"""
+        add_plate!(Phase, Temp, Grid::AbstractGeneralGrid; xlim=(), ylim=(), zlim::Tuple = (0.0,0.8), phase = ConstantPhase(1), T=nothing, segments=nothing, cell=false )
+Adds a tectonic plate with phase and temperature structure to a 3D model setup.
+This function enables the definition of tectonic plates in the xy plane and projects them along the z-axis, providing a flexible approach to model complex plate geometries.
+Parameters
+==========
+- `Phase`  - Phase array (consistent with Grid)
+- `Temp`   - Temperature array (consistent with Grid)
+- `Grid`   - Grid structure (usually obtained with read_LaMEM_inputfile)
+- `xlim`   - `x`-coordinate of the polygon points, same ordering as ylim, number of points unlimited
+- `ylim`   - `y`-coordinate of the polygon points, same ordering as xlim, number of points unlimited
+- `zlim`   - `z`-coordinate range for projecting the polygon (start and stop, two values)
+- `phase`  - Specifies the phase of the plate. See `ConstantPhase()`
+- `T`      - Specifies the temperature of the plate. See `ConstantTemp()`, `LinearTemp()`, `HalfspaceCoolingTemp()`, `SpreadingRateTemp()`
+- `segments` - Optional. Allows for thermal segmentation within the polygon. Useful for ridge systems or complex thermal structures.
+- `cell`   - If true, `Phase` and `Temp` are defined on cell centers
+Example
+========
+Tectonic plate in the xy plane with phase and temperature structure:
+```julia-repl
+julia> Grid = CartData(xyz_grid(x, y, z))
+Grid:
+  nel         : (512, 512, 128)
+  marker/cell : (1, 1, 1)
+  markers     : (512, 512, 128)
+  x           ϵ [-1000.0 : 0.0]
+  y           ϵ [-1000.0 : 1000.0]
+  z           ϵ [-660.0 : 0.0]
+julia> Phases = zeros(Int32,   size(Grid.X))
+julia> Temp   = zeros(Float64, size(Grid.X))
+julia> segments = [
+           ((-500.0, -1000.0), (-500.0, 0.0)),  # Segment 1
+           ((-250.0, 0.0), (-250.0, 200.0)),    # Segment 2
+           ((-750.0, 200.0), (-750.0, 1000.0))  # Segment 3
+       ]
+julia> lith = LithosphericPhases(Layers=[15 55], Phases=[1 2], Tlab=1250)
+julia> add_plate!(Phases, Temp, Grid;
+           xlim=(-1000.0, -750.0, -250.0, 0.0, -250.0, -750.0),
+           ylim=(0.0, 500.0, 500.0, 0.0, -500.0, -500.0),
+           zlim=(-150.0, 0.0),
+           phase=lith,
+           T=SpreadingRateTemp(SpreadingVel=3),
+           segments=segments)
+julia> Grid = addfield(Grid, (; Phases, Temp))  # Add fields
+julia> write_paraview(Grid, "Plate")  # Save model to Paraview
+1-element Vector{String}:
+ "Plate.vts"
+"""
+
+function add_plate!(
+        Phase, Temp, Grid::AbstractGeneralGrid;
+        xlim = (), ylim = (), zlim::Tuple = (0.0, 0.8),
+        phase = ConstantPhase(1),
+        T = nothing, segments = nothing, cell = false
+    )
+
+    xlim_ = collect(xlim)
+    ylim_ = collect(ylim)
+    zlim_ = collect(zlim)
+
+    X, Y, Z = coordinate_grids(Grid, cell = cell)
+    ind = zeros(Bool, size(X))
+    ind_slice = zeros(Bool, size(X[:, :, 1]))
+
+    for k in 1:size(Z, 3)
+        if zlim_[1] <= Z[1, 1, k] <= zlim_[2]
+            inpolygon!(ind_slice, xlim_, ylim_, X[:, :, k], Y[:, :, k])
+            @views ind[:, :, k] = ind_slice
+        else
+            @views ind[:, :, k] = zeros(size(X[:, :, 1]))
+        end
+    end
+
+    if !isempty(ind)
+        if T != nothing
+            if segments !== nothing
+                Temp[ind] = compute_thermal_structure(Temp[ind], X[ind], Y[ind], Z[ind], Phase[ind], T, segments)
+            else
+                Temp[ind] = compute_thermal_structure(Temp[ind], X[ind], Y[ind], Z[ind], Phase[ind], T)
+            end
+        end
+        Phase[ind] = compute_phase(Phase[ind], Temp[ind], X[ind], Y[ind], Z[ind], phase)
+    end
+
+    return nothing
+end
+
+"""
+    add_plate!(Phase, Temp, Grid::AbstractGeneralGrid,
+    bounds::AbstractVector{<:AbstractVector{<:Real}};
+    phase = ConstantPhase(1),
+    T = nothing,
+    segments = nothing,
+    cell = false     )
+Add plate function but getting bounds as a vector bounds in a way of [[xmin,xmax],[ymin,ymax],[zmin,zmax]]. If bounds is empty return nothing 
+"""
+function add_plate!(
+        Phase, Temp, Grid::AbstractGeneralGrid,           # required input
+        bounds::Union{Vector{Any}, AbstractVector{<:AbstractVector{<:Real}}};    # limits of the box
+        phase = ConstantPhase(1),                            # Sets the phase number(s) in the box
+        T = nothing,                                         # Sets the thermal structure (various functions are available)
+        segments = nothing,                                  # Allows defining multiple ridge segments
+        cell = false                                         # if true, Phase and Temp are defined on cell centers
+    )
+
+    return if !isempty(bounds)
+        xlim = (Tuple(bounds[1]))
+        ylim = (Tuple(bounds[2]))
+        zlim = (Tuple(bounds[3]))
+
+        add_plate!(
+            Phase, Temp, Grid;       # required input
+            xlim = xlim, ylim = ylim, zlim = zlim,     # limits of the box
+            Origin = Origin, StrikeAngle = StrikeAngle, DipAngle = DipAngle,      # origin & dip/strike
+            phase = phase,                          # Sets the phase number(s) in the box
+            T = T,                                  # Sets the thermal structure (various functions are available)
+            segments = segments,                     # Allows defining multiple ridge segments
+            cell = cell
+        )
+    end
 end
 
 """
